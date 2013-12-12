@@ -4,6 +4,7 @@
 #include <util/delay.h>
 #include <avr/interrupt.h>
 #include <avr/pgmspace.h>
+#include <stdio.h>
 #include "console.h"
 
 #define CPU_PRESCALE(n) (CLKPR = 0x80, CLKPR = (n))
@@ -14,7 +15,23 @@
 #define set_input(portdir,pin) portdir &= ~(1<<pin)
 #define set_output(portdir,pin) portdir |= (1<<pin)
 
-void setup_adc(void)
+uint8_t js_ref_avg_window[3] = { 130, 130, 130 };
+uint8_t js_ref_avg_window_pos = 0;
+uint8_t js_x = 0;
+uint8_t js_y = 0;
+
+uint16_t average(uint8_t* window, uint8_t size)
+{
+	uint16_t avg = 0;
+	for(uint8_t i = 0; i < size; ++i)
+	{
+		avg += window[i];
+	}
+	avg /= size;
+	return avg;
+}
+
+void adc_init(void)
 {
 	// ADC frequency = F_CPU / 128
 	ADCSRA |= (1 << ADPS2) | (1 << ADPS1);
@@ -22,15 +39,16 @@ void setup_adc(void)
 	ADCSRA |= (1 << ADIE);
 	// Enable free running
 	ADCSRA |= (1 << ADATE);
-	// ADC reference = AVCC
-	ADMUX |= (1 << REFS0);
-	// Set input from ADC7
-	ADMUX |= (1 << MUX2) | (1 << MUX1) | (1 << MUX0);
-	// The ADC result will be in ADCH, ADCL is discarded
-	ADMUX |= (1 << ADLAR);
+	// ADC reference = AVCC, set by REFS0
+	// ADCL is discarded, the result is in ADCH. Set by ADLAR
+	ADMUX |= (1 << REFS0) | (1 << ADLAR);
+	
+	// Start conversion from an arbitrary ADC pin
+	ADMUX |= 5;
 	
 	ADCSRA |= (1 << ADEN);
 	sei();
+	// Start with reading JS_REF
 	ADCSRA |= (1 << ADSC);
 }
 
@@ -46,7 +64,8 @@ int main(void)
 	while(!console_configured()) { }
 	_delay_ms(1000);
 	output_low(PORTD, LED);
-	//setup_adc();
+
+	adc_init();
 	
 	while(1)
 	{
@@ -54,9 +73,12 @@ int main(void)
 		if(console_attached)
 		{
 			output_high(PORTD, LED);
-			console_send_str(PSTR("> "));
 			console_recv_str(buf, sizeof(buf));
 			console_send_str(PSTR("\r\n"));
+			uint16_t avg = average(js_ref_avg_window, sizeof(js_ref_avg_window));
+			console_write_fmt("JS_REF: %d\r\n", avg);
+			console_write_fmt("JS_x: %d\r\n", js_x);
+			console_write_fmt("JS_y: %d\r\n", js_y);
 		}
 		else
 		{
@@ -67,12 +89,29 @@ int main(void)
 
 ISR(ADC_vect)
 {
-	if(ADCH < 107 || ADCH > 148)
+	switch(ADMUX)
 	{
-		output_high(PORTD, LED);
+		case 0x65:
+			js_x = ADCH;
+			// Switch to JS_REF
+			ADMUX = 0x66;
+			break;
+		case 0x66:
+			js_ref_avg_window[js_ref_avg_window_pos++] = ADCH;
+			js_ref_avg_window_pos %= sizeof(js_ref_avg_window);
+			// Switch to JS_2
+			ADMUX = 0x67;
+			break;
+		case 0x67:
+			js_y = ADCH;
+			// Switch to JS_1
+			ADMUX = 0x65;
+			break;
+		default:
+			break;
 	}
-	else
-	{
-		output_low(PORTD, LED);
-	}
+	
+	// Start the conversion again
+	ADCSRA |= (1 << ADSC);
+	
 }

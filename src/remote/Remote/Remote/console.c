@@ -1,6 +1,8 @@
 #include "console.h"
 #include <avr/pgmspace.h>
 #include "usb/usb_serial.h"
+#include <stdio.h>
+#include <stdarg.h>
 
 void console_send_str(const char *s)
 {
@@ -67,4 +69,19 @@ void console_init()
 uint8_t console_configured()
 {
 	return usb_configured();
+}
+
+int8_t console_write(const char *buffer, uint16_t size)
+{
+	return usb_serial_write((const uint8_t*)buffer, size);
+}
+
+int8_t console_write_fmt(const char* fmt, ...)
+{
+	char buf[32];
+	va_list args;
+	va_start(args, fmt);
+	uint16_t size = vsnprintf(buf, sizeof(buf), fmt, args);
+	va_end(args);
+	return console_write(buf, size);
 }
