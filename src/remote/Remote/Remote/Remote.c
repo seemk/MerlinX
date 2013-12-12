@@ -1,16 +1,12 @@
-/*
- * Remote.c
- *
- * Created: 3.12.2013 22:19:55
- *  Author: Siim
- */
-
 #define F_CPU 1000000UL
 
 #include <avr/io.h>
 #include <util/delay.h>
 #include <avr/interrupt.h>
+#include <avr/pgmspace.h>
+#include "console.h"
 
+#define CPU_PRESCALE(n) (CLKPR = 0x80, CLKPR = (n))
 #define LED PD5
 
 #define output_low(port,pin) port &= ~(1<<pin)
@@ -40,14 +36,33 @@ void setup_adc(void)
 
 int main(void)
 {
+	char buf[32];
+	uint8_t console_attached = 0;
+	CPU_PRESCALE(0);
 	set_output(DDRD, LED);
+	output_high(PORTD, LED);
 	
-	setup_adc();
+	console_init();
+	while(!console_configured()) { }
+	_delay_ms(1000);
+	output_low(PORTD, LED);
+	//setup_adc();
 	
-    while(1)
-    {
-		
-    }
+	while(1)
+	{
+		console_attached = console_status(console_attached);
+		if(console_attached)
+		{
+			output_high(PORTD, LED);
+			console_send_str(PSTR("> "));
+			console_recv_str(buf, sizeof(buf));
+			console_send_str(PSTR("\r\n"));
+		}
+		else
+		{
+			output_low(PORTD, LED);
+		}
+	}
 }
 
 ISR(ADC_vect)
