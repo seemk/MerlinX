@@ -5,6 +5,7 @@
 #include <avr/interrupt.h>
 #include <avr/pgmspace.h>
 #include <stdio.h>
+#include "remote.h"
 #include "console.h"
 
 #define CPU_PRESCALE(n) (CLKPR = 0x80, CLKPR = (n))
@@ -17,10 +18,10 @@
 
 uint8_t js_ref_avg_window[3] = { 130, 130, 130 };
 uint8_t js_ref_avg_window_pos = 0;
-uint8_t js_x = 0;
-uint8_t js_y = 0;
+uint8_t js_adc_x = 0;
+uint8_t js_adc_y = 0;
 
-uint16_t average(uint8_t* window, uint8_t size)
+uint8_t average(uint8_t* window, uint8_t size)
 {
 	uint16_t avg = 0;
 	for(uint8_t i = 0; i < size; ++i)
@@ -56,6 +57,7 @@ int main(void)
 {
 	char buf[32];
 	uint8_t console_attached = 0;
+	joystick js;
 	CPU_PRESCALE(0);
 	set_output(DDRD, LED);
 	output_high(PORTD, LED);
@@ -66,7 +68,7 @@ int main(void)
 	output_low(PORTD, LED);
 
 	adc_init();
-	
+
 	while(1)
 	{
 		console_attached = console_status(console_attached);
@@ -75,10 +77,11 @@ int main(void)
 			output_high(PORTD, LED);
 			console_recv_str(buf, sizeof(buf));
 			console_send_str(PSTR("\r\n"));
-			uint16_t avg = average(js_ref_avg_window, sizeof(js_ref_avg_window));
+			uint8_t avg = average(js_ref_avg_window, sizeof(js_ref_avg_window));
+			js = map_js_reading(js_adc_x, js_adc_y, avg);
 			console_write_fmt("JS_REF: %d\r\n", avg);
-			console_write_fmt("JS_x: %d\r\n", js_x);
-			console_write_fmt("JS_y: %d\r\n", js_y);
+			console_write_fmt("JS_x: %d\r\n", js.x);
+			console_write_fmt("JS_y: %d\r\n", js.y);
 		}
 		else
 		{
@@ -92,7 +95,7 @@ ISR(ADC_vect)
 	switch(ADMUX)
 	{
 		case 0x65:
-			js_x = ADCH;
+			js_adc_x = ADCH;
 			// Switch to JS_REF
 			ADMUX = 0x66;
 			break;
@@ -103,7 +106,7 @@ ISR(ADC_vect)
 			ADMUX = 0x67;
 			break;
 		case 0x67:
-			js_y = ADCH;
+			js_adc_y = ADCH;
 			// Switch to JS_1
 			ADMUX = 0x65;
 			break;
@@ -113,5 +116,28 @@ ISR(ADC_vect)
 	
 	// Start the conversion again
 	ADCSRA |= (1 << ADSC);
+}
+
+joystick map_js_reading(uint8_t adc_js_x, uint8_t adc_js_y, uint8_t adc_js_ref)
+{
+	// The reference has an average downward bias of 6 from the readings.
+	static uint8_t const js_bias = 6;
+	static int8_t const map_min = -100;
+	static int8_t const map_max = 100;
+	// The reference is ADC VCC / 2
+	// Readings vary from reference +- 10% of VCC.
+	// 25 here means ADC max (255) * 0.1
+	int16_t adc_range_max = adc_js_ref + 25;
+	int16_t adc_range_min = adc_js_ref - 25;
+
+	int16_t ub_js_x = adc_js_x - js_bias;
+	int16_t ub_js_y = adc_js_y - js_bias;
 	
+	int16_t offset = (map_max - map_min) / (adc_range_max - adc_range_min);
+	
+	joystick js;
+	js.x = (ub_js_x - adc_range_min) * offset + map_min;
+	js.y = (ub_js_y - adc_range_min) * offset + map_min;
+
+	return js;
 }

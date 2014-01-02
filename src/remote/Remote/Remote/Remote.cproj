@@ -99,7 +99,10 @@
     <Compile Include="console.h">
       <SubType>compile</SubType>
     </Compile>
-    <Compile Include="Remote.c">
+    <Compile Include="remote.c">
+      <SubType>compile</SubType>
+    </Compile>
+    <Compile Include="remote.h">
       <SubType>compile</SubType>
     </Compile>
     <Compile Include="usb\usb_serial.c">
