@@ -2,3 +2,4 @@
 *.s#*
 Debug/
 Release/
+src/remote/Remote/Remote.atsuo
