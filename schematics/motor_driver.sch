@@ -9232,7 +9232,7 @@ Grid 5.00 mm&lt;p&gt;
 <pinref part="JP1" gate="A" pin="4"/>
 </segment>
 </net>
-<net name="N$5" class="0">
+<net name="IS_L" class="0">
 <segment>
 <pinref part="R4" gate="G$1" pin="1"/>
 <wire x1="0" y1="60.96" x2="0" y2="68.58" width="0.1524" layer="91"/>
@@ -9299,7 +9299,7 @@ Grid 5.00 mm&lt;p&gt;
 <wire x1="116.84" y1="63.5" x2="116.84" y2="60.96" width="0.1524" layer="91"/>
 </segment>
 </net>
-<net name="N$10" class="0">
+<net name="IS_R" class="0">
 <segment>
 <wire x1="60.96" y1="33.02" x2="60.96" y2="38.1" width="0.1524" layer="91"/>
 <wire x1="60.96" y1="38.1" x2="121.92" y2="38.1" width="0.1524" layer="91"/>

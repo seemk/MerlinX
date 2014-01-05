@@ -6914,7 +6914,7 @@ Source: AVX .. aphvc.pdf</description>
 <busses>
 </busses>
 <nets>
-<net name="N$1" class="0">
+<net name="RI-" class="0">
 <segment>
 <pinref part="LINE_DRV" gate="G$1" pin="RI-"/>
 <wire x1="43.18" y1="-5.08" x2="48.26" y2="-5.08" width="0.1524" layer="91"/>
@@ -6926,7 +6926,7 @@ Source: AVX .. aphvc.pdf</description>
 <pinref part="JP1" gate="A" pin="2"/>
 </segment>
 </net>
-<net name="N$2" class="0">
+<net name="RI+" class="0">
 <segment>
 <pinref part="LINE_DRV" gate="G$1" pin="RI+"/>
 <wire x1="43.18" y1="0" x2="48.26" y2="0" width="0.1524" layer="91"/>
@@ -6940,7 +6940,7 @@ Source: AVX .. aphvc.pdf</description>
 <pinref part="JP1" gate="A" pin="1"/>
 </segment>
 </net>
-<net name="N$3" class="0">
+<net name="DO-" class="0">
 <segment>
 <pinref part="LINE_DRV" gate="G$1" pin="DO-"/>
 <wire x1="43.18" y1="-15.24" x2="60.96" y2="-15.24" width="0.1524" layer="91"/>
@@ -6949,7 +6949,7 @@ Source: AVX .. aphvc.pdf</description>
 <pinref part="JP1" gate="A" pin="4"/>
 </segment>
 </net>
-<net name="N$4" class="0">
+<net name="DO+" class="0">
 <segment>
 <pinref part="LINE_DRV" gate="G$1" pin="DO+"/>
 <wire x1="43.18" y1="-10.16" x2="66.04" y2="-10.16" width="0.1524" layer="91"/>
