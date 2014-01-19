@@ -1,5 +1,4 @@
-#define F_CPU 1000000UL
-
+#include "defines.h"
 #include <avr/io.h>
 #include <util/delay.h>
 #include <avr/interrupt.h>
@@ -7,14 +6,19 @@
 #include <stdio.h>
 #include "remote.h"
 #include "console.h"
+#include "usart.h"
 
-#define CPU_PRESCALE(n) (CLKPR = 0x80, CLKPR = (n))
-#define LED PD5
+#define BTN_PRESSED(pin, btn) (!(pin & (1 << btn)))
 
-#define output_low(port,pin) port &= ~(1<<pin)
-#define output_high(port,pin) port |= (1<<pin)
-#define set_input(portdir,pin) portdir &= ~(1<<pin)
-#define set_output(portdir,pin) portdir |= (1<<pin)
+typedef struct 
+{
+	uint8_t up :	1;
+	uint8_t down:	1;
+	uint8_t left:	1;
+	uint8_t right:	1;
+	uint8_t center: 1;
+	uint8_t light:	1;
+} btn_states_t;
 
 uint8_t js_ref_avg_window[3] = { 130, 130, 130 };
 uint8_t js_ref_avg_window_pos = 0;
@@ -53,6 +57,63 @@ void adc_init(void)
 	ADCSRA |= (1 << ADSC);
 }
 
+void buttons_init()
+{
+
+	set_input(DDRC, BTN_CAM_DOWN);
+	output_high(PORTC, BTN_CAM_DOWN);
+	
+	set_input(DDRC, BTN_CAM_UP);
+	output_high(PORTC, BTN_CAM_UP);
+	
+	set_input(DDRB, BTN_CAM_CENTER);
+	output_high(PORTB, BTN_CAM_CENTER);
+	
+	set_input(DDRB, BTN_CAM_LEFT);
+	output_high(PORTB, BTN_CAM_LEFT);
+	
+	set_input(DDRB, BTN_CAM_RIGHT);
+	output_high(PORTB, BTN_CAM_RIGHT);
+	
+	set_input(DDRD, BTN_LIGHT);
+	output_high(PORTD, BTN_LIGHT);
+	
+	set_input(DDRD, BTN_UU1);
+	output_high(PORTD, BTN_UU1);
+	
+	set_input(DDRE, BTN_UU2);
+	output_high(PORTE, BTN_UU2);
+	
+	set_input(DDRB, BTN_UU3);
+	output_high(PORTB, BTN_UU3);
+	
+	set_input(DDRB, BTN_UU4);
+	output_high(PORTB, BTN_UU4);
+}
+
+btn_states_t read_btn_states()
+{
+	btn_states_t state;
+	state.down = BTN_PRESSED(PINC, BTN_CAM_DOWN);
+	state.up = BTN_PRESSED(PINC, BTN_CAM_UP);
+	state.center = BTN_PRESSED(PINB, BTN_CAM_CENTER);
+	state.left = BTN_PRESSED(PINB, BTN_CAM_LEFT);
+	state.right = BTN_PRESSED(PINB, BTN_CAM_RIGHT);
+	state.light = BTN_PRESSED(PIND, BTN_LIGHT);
+	
+	return state;
+}
+
+void print_btn_states(btn_states_t* states)
+{
+	console_write_fmt("Up: %d\r\n", states->up);
+	console_write_fmt("Down: %d\r\n", states->down);
+	console_write_fmt("Center: %d\r\n", states->center);
+	console_write_fmt("Left: %d\r\n", states->left);
+	console_write_fmt("Right: %d\r\n", states->right);
+	console_write_fmt("Light: %d\r\n", states->light);
+}
+
 int main(void)
 {
 	char buf[32];
@@ -62,15 +123,20 @@ int main(void)
 	set_output(DDRD, LED);
 	output_high(PORTD, LED);
 	
+	buttons_init();
+	
+	usart_init(9600);
 	console_init();
+	
 	while(!console_configured()) { }
 	_delay_ms(1000);
 	output_low(PORTD, LED);
 
 	adc_init();
-
+	
 	while(1)
 	{
+
 		console_attached = console_status(console_attached);
 		if(console_attached)
 		{
@@ -82,11 +148,14 @@ int main(void)
 			console_write_fmt("JS_REF: %d\r\n", avg);
 			console_write_fmt("JS_x: %d\r\n", js.x);
 			console_write_fmt("JS_y: %d\r\n", js.y);
+			btn_states_t btn_states = read_btn_states();
+			print_btn_states(&btn_states);
 		}
 		else
 		{
 			output_low(PORTD, LED);
 		}
+
 	}
 }
 

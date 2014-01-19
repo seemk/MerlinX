@@ -99,10 +99,19 @@
     <Compile Include="console.h">
       <SubType>compile</SubType>
     </Compile>
+    <Compile Include="defines.h">
+      <SubType>compile</SubType>
+    </Compile>
     <Compile Include="remote.c">
       <SubType>compile</SubType>
     </Compile>
     <Compile Include="remote.h">
+      <SubType>compile</SubType>
+    </Compile>
+    <Compile Include="usart.c">
+      <SubType>compile</SubType>
+    </Compile>
+    <Compile Include="usart.h">
       <SubType>compile</SubType>
     </Compile>
     <Compile Include="usb\usb_serial.c">
