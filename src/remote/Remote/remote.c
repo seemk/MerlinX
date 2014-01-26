@@ -4,21 +4,24 @@
 #include <avr/interrupt.h>
 #include <avr/pgmspace.h>
 #include <stdio.h>
+#include <string.h>
+#include <stdlib.h>
 #include "remote.h"
 #include "console.h"
 #include "usart.h"
 
-#define BTN_PRESSED(pin, btn) (!(pin & (1 << btn)))
+uint8_t button_states[8] = { 0, 0, 0, 0, 0, 0, 0, 0 };
+joystick_t joystick_reading = { 0, 0 };
 
-typedef struct 
+void send_cmd(cmd_t cmd)
 {
-	uint8_t up :	1;
-	uint8_t down:	1;
-	uint8_t left:	1;
-	uint8_t right:	1;
-	uint8_t center: 1;
-	uint8_t light:	1;
-} btn_states_t;
+	usart_send(cmd_begin);
+	usart_send(cmd.button);
+	usart_send(cmd.action);
+	usart_send(cmd.joystick_reading.x);
+	usart_send(cmd.joystick_reading.y);
+	usart_send(cmd_end);
+}
 
 uint8_t js_ref_avg_window[3] = { 130, 130, 130 };
 uint8_t js_ref_avg_window_pos = 0;
@@ -34,6 +37,12 @@ uint8_t average(uint8_t* window, uint8_t size)
 	}
 	avg /= size;
 	return avg;
+}
+
+void usart_byte_received(uint8_t incoming)
+{
+	console_write_fmt("Received: %c", incoming);
+	usart_send(incoming);
 }
 
 void adc_init(void)
@@ -91,41 +100,59 @@ void buttons_init()
 	output_high(PORTB, BTN_UU4);
 }
 
-btn_states_t read_btn_states()
+void update_buttons(uint8_t* btn_array)
 {
-	btn_states_t state;
-	state.down = BTN_PRESSED(PINC, BTN_CAM_DOWN);
-	state.up = BTN_PRESSED(PINC, BTN_CAM_UP);
-	state.center = BTN_PRESSED(PINB, BTN_CAM_CENTER);
-	state.left = BTN_PRESSED(PINB, BTN_CAM_LEFT);
-	state.right = BTN_PRESSED(PINB, BTN_CAM_RIGHT);
-	state.light = BTN_PRESSED(PIND, BTN_LIGHT);
-	
-	return state;
+	btn_array[CAM_CENTER] = BTN_PRESSED(PINB, BTN_CAM_CENTER);
+	btn_array[CAM_UP]	  = BTN_PRESSED(PINC, BTN_CAM_UP);
+	btn_array[CAM_DOWN]	  = BTN_PRESSED(PINC, BTN_CAM_DOWN);
+	btn_array[CAM_LEFT]   = BTN_PRESSED(PINB, BTN_CAM_LEFT);
+	btn_array[CAM_RIGHT]  = BTN_PRESSED(PINB, BTN_CAM_RIGHT);
+	btn_array[LIGHT]	  = BTN_PRESSED(PIND, BTN_LIGHT);
 }
 
-void print_btn_states(btn_states_t* states)
+void print_btn_states(uint8_t* btn_array)
 {
-	console_write_fmt("Up: %d\r\n", states->up);
-	console_write_fmt("Down: %d\r\n", states->down);
-	console_write_fmt("Center: %d\r\n", states->center);
-	console_write_fmt("Left: %d\r\n", states->left);
-	console_write_fmt("Right: %d\r\n", states->right);
-	console_write_fmt("Light: %d\r\n", states->light);
+	console_write_fmt("Up: %d\r\n", btn_array[CAM_UP]);
+	console_write_fmt("Down: %d\r\n", btn_array[CAM_DOWN]);
+	console_write_fmt("Center: %d\r\n", btn_array[CAM_CENTER]);
+	console_write_fmt("Left: %d\r\n", btn_array[CAM_LEFT]);
+	console_write_fmt("Right: %d\r\n", btn_array[CAM_RIGHT]);
+	console_write_fmt("Light: %d\r\n", btn_array[LIGHT]);
+}
+
+// Returns NO_BUTTON if the states are equal
+// Otherwise returns the button whose state was changed
+button_t compare_states(uint8_t* a, uint8_t* b)
+{
+	if(a[CAM_CENTER] != b[CAM_CENTER]) return CAM_CENTER;
+	if(a[CAM_UP] != b[CAM_UP])		   return CAM_UP;
+	if(a[CAM_DOWN] != b[CAM_DOWN])	   return CAM_DOWN;
+	if(a[CAM_LEFT] != b[CAM_LEFT])	   return CAM_LEFT;
+	if(a[CAM_RIGHT] != b[CAM_RIGHT])   return CAM_RIGHT;
+	if(a[LIGHT] != b[LIGHT])		   return LIGHT;
+	
+	return NO_BUTTON;
+}
+
+uint8_t joystick_needs_command(joystick_t* old_js, joystick_t* new_js)
+{
+	const int8_t min_deviation = 6;
+	int x_deviation = abs(old_js->x - new_js->x);
+	int y_deviation = abs(old_js->y - new_js->y);
+	return ( x_deviation > min_deviation || y_deviation > min_deviation);
 }
 
 int main(void)
 {
 	char buf[32];
 	uint8_t console_attached = 0;
-	joystick js;
 	CPU_PRESCALE(0);
 	set_output(DDRD, LED);
 	output_high(PORTD, LED);
 	
 	buttons_init();
 	
-	usart_init(9600);
+	usart_init(9600, &usart_byte_received);
 	console_init();
 	
 	while(!console_configured()) { }
@@ -136,20 +163,39 @@ int main(void)
 	
 	while(1)
 	{
-
+		
+		uint8_t avg = average(js_ref_avg_window, sizeof(js_ref_avg_window));
+		joystick_t new_js_reading = map_js_reading(js_adc_x, js_adc_y, avg);
+		
+		// Handle joystick readings, only send the JS command if the new reading
+		// deviates from the old reading by a certain amount
+		//if(joystick_needs_command(&joystick_reading, &new_js_reading))
+		//{
+			//cmd_t cmd = { JS, MOVED, new_js_reading };
+			//send_cmd(cmd);
+		//}
+				
+		joystick_reading = new_js_reading;
+		
+		uint8_t new_btn_states[8];
+		update_buttons(new_btn_states);
+		button_t changed_btn = compare_states(button_states, new_btn_states);
+		if(changed_btn != NO_BUTTON)
+		{
+			action_t action = new_btn_states[changed_btn] ? PRESSED : RELEASED;
+			cmd_t cmd = { changed_btn, action, new_js_reading };
+			console_write_fmt("Sending btn command.");
+			send_cmd(cmd);
+		}
+		memcpy(button_states, new_btn_states, sizeof(button_states));
+		
 		console_attached = console_status(console_attached);
 		if(console_attached)
 		{
 			output_high(PORTD, LED);
-			console_recv_str(buf, sizeof(buf));
-			console_send_str(PSTR("\r\n"));
-			uint8_t avg = average(js_ref_avg_window, sizeof(js_ref_avg_window));
-			js = map_js_reading(js_adc_x, js_adc_y, avg);
-			console_write_fmt("JS_REF: %d\r\n", avg);
-			console_write_fmt("JS_x: %d\r\n", js.x);
-			console_write_fmt("JS_y: %d\r\n", js.y);
-			btn_states_t btn_states = read_btn_states();
-			print_btn_states(&btn_states);
+			//console_recv_str(buf, sizeof(buf));
+			//console_send_str(PSTR("\r\n"));
+			//print_btn_states(new_btn_states);
 		}
 		else
 		{
@@ -187,7 +233,7 @@ ISR(ADC_vect)
 	ADCSRA |= (1 << ADSC);
 }
 
-joystick map_js_reading(uint8_t adc_js_x, uint8_t adc_js_y, uint8_t adc_js_ref)
+joystick_t map_js_reading(uint8_t adc_js_x, uint8_t adc_js_y, uint8_t adc_js_ref)
 {
 	// The reference has an average downward bias of 6 from the readings.
 	static uint8_t const js_bias = 6;
@@ -204,7 +250,7 @@ joystick map_js_reading(uint8_t adc_js_x, uint8_t adc_js_y, uint8_t adc_js_ref)
 	
 	int16_t offset = (map_max - map_min) / (adc_range_max - adc_range_min);
 	
-	joystick js;
+	joystick_t js;
 	js.x = (ub_js_x - adc_range_min) * offset + map_min;
 	js.y = (ub_js_y - adc_range_min) * offset + map_min;
 

@@ -23,4 +23,8 @@
 #define set_input(portdir,pin) portdir &= ~(1<<pin)
 #define set_output(portdir,pin) portdir |= (1<<pin)
 
+#define BTN_PRESSED(pin, btn) (!(pin & (1 << btn)))
+#define cmd_begin 0x7e
+#define cmd_end   0x7f
+
 #endif
