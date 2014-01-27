@@ -23,10 +23,26 @@ void send_cmd(cmd_t cmd)
 	usart_send(cmd_end);
 }
 
+// Sets up the timer that procs every 30 ms to send the joystick update
+void timers_init()
+{
+	TCCR1B |= (1 << WGM12);
+	
+	TIMSK1 |= (1 << OCIE1A);
+	
+	sei();
+	
+	OCR1A = 469;
+	
+	// Prescale = 1024	
+	TCCR1B |= ((1 << CS12) | (1 << CS10));
+}
+
 uint8_t js_ref_avg_window[3] = { 130, 130, 130 };
 uint8_t js_ref_avg_window_pos = 0;
 uint8_t js_adc_x = 0;
 uint8_t js_adc_y = 0;
+uint8_t hover_adc = 0;
 
 uint8_t average(uint8_t* window, uint8_t size)
 {
@@ -136,7 +152,7 @@ button_t compare_states(uint8_t* a, uint8_t* b)
 
 uint8_t joystick_needs_command(joystick_t* old_js, joystick_t* new_js)
 {
-	const int8_t min_deviation = 6;
+	const int8_t min_deviation = 8;
 	int x_deviation = abs(old_js->x - new_js->x);
 	int y_deviation = abs(old_js->y - new_js->y);
 	return ( x_deviation > min_deviation || y_deviation > min_deviation);
@@ -160,31 +176,20 @@ int main(void)
 	output_low(PORTD, LED);
 
 	adc_init();
-	
+	timers_init();
 	while(1)
 	{
 		
 		uint8_t avg = average(js_ref_avg_window, sizeof(js_ref_avg_window));
-		joystick_t new_js_reading = map_js_reading(js_adc_x, js_adc_y, avg);
-		
-		// Handle joystick readings, only send the JS command if the new reading
-		// deviates from the old reading by a certain amount
-		//if(joystick_needs_command(&joystick_reading, &new_js_reading))
-		//{
-			//cmd_t cmd = { JS, MOVED, new_js_reading };
-			//send_cmd(cmd);
-		//}
-				
-		joystick_reading = new_js_reading;
-		
+		joystick_reading = map_js_reading(js_adc_x, js_adc_y, avg);
 		uint8_t new_btn_states[8];
 		update_buttons(new_btn_states);
 		button_t changed_btn = compare_states(button_states, new_btn_states);
 		if(changed_btn != NO_BUTTON)
 		{
+			console_write_fmt("POT1: %d\r\n", hover_adc);
 			action_t action = new_btn_states[changed_btn] ? PRESSED : RELEASED;
-			cmd_t cmd = { changed_btn, action, new_js_reading };
-			console_write_fmt("Sending btn command.");
+			cmd_t cmd = { changed_btn, action, joystick_reading };
 			send_cmd(cmd);
 		}
 		memcpy(button_states, new_btn_states, sizeof(button_states));
@@ -222,6 +227,18 @@ ISR(ADC_vect)
 			break;
 		case 0x67:
 			js_adc_y = ADCH;
+			// Switch to ADC0
+			ADMUX = 0x60;
+			break;
+		case 0x60:
+		// ADC giving garbage values, wtf? Happens on all three ADC channels
+		// Temporary fix
+			if(ADCH < 132 || ADCH > 139)
+			{
+				hover_adc = ADCH;
+			}
+			
+			
 			// Switch to JS_1
 			ADMUX = 0x65;
 			break;
@@ -255,4 +272,10 @@ joystick_t map_js_reading(uint8_t adc_js_x, uint8_t adc_js_y, uint8_t adc_js_ref
 	js.y = (ub_js_y - adc_range_min) * offset + map_min;
 
 	return js;
+}
+
+ISR(TIMER1_COMPA_vect)
+{
+	cmd_t cmd = { JS, MOVED, joystick_reading };
+	send_cmd(cmd);
 }
