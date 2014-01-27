@@ -18,6 +18,7 @@ Joystick averages[average_buf_size];
 const int servoOverflowMax = 75;
 const int pwmLevelMin = 60;
 const int pwmLevelMax = 250;
+const int movementThreshold = 20;
 
 int hServoCenter = 68;
 int hServoRight = 35;
@@ -30,6 +31,8 @@ int vServoDown = 79;
 int vServoUp = 43;
 int vServoCount = 0;
 Direction vServoDirection = NONE;
+
+int hoverADC = 0;
 
 const char cmd_begin = 0x7e;
 const char cmd_end = 0x7f;
@@ -116,6 +119,7 @@ int parseCmd(char* buf, Command& cmd)
   cmd.action = (Action)buf[2];
   cmd.joystick.x = (int)buf[3];
   cmd.joystick.y = (int)buf[4];
+  cmd.hoverAdc = (int)buf[5];
   
   return 1;  
 }
@@ -130,6 +134,13 @@ void handleCmd(const Command& cmd)
    servoV.write(vServoCenter); 
   }
   
+  if(btn == POT)
+  {
+    hoverADC = cmd.hoverAdc;
+    Serial.print("Received hover ADC. ");
+    Serial.println(hoverADC, DEC);
+    return;
+  }
   switch(action)
   {
    case PRESSED:
@@ -179,7 +190,7 @@ int isCommandValid(const Command& cmd)
 {
  Action action = cmd.action;
  Button btn = cmd.button;
- return btn <= 7 && action <= 3; 
+ return btn <= 8 && action <= 3; 
 }
 
 void printJoystick(Joystick js)
@@ -203,6 +214,27 @@ void printCmd(const Command& cmd)
   }
 
   Serial.println(" }");
+}
+
+// Maps Joystick reading [-100, 100] to [60, 250]
+int joystickToPwm(int joystickValue)
+{
+  const float pwmLevelMin = 30.f;
+  const float pwmLevelMax = 240.f;
+  int absoluteJsValue = abs(joystickValue);
+  if(absoluteJsValue <= movementThreshold)
+  {
+    return pwmLevelMin; 
+  }
+  else if(absoluteJsValue >= 100)
+  {
+    return pwmLevelMax; 
+  }
+  else
+  {
+    float converted = (((float)absoluteJsValue - movementThreshold) / 80.f) * (pwmLevelMax - pwmLevelMin) + pwmLevelMin;
+    return (int)converted;
+  }
 }
 
 void moveServos()
@@ -231,17 +263,30 @@ void loop()
         //printJoystick(average_js);
         //Serial.println("");
         
-        if(average_js.y > 25)
+        if(average_js.y > movementThreshold)
         {
             movementState = FORWARD;
             
         }
+        else if(average_js.y < -movementThreshold)
+        {
+           movementState = BACKWARD;
+        }
+        else if(average_js.x < -movementThreshold)
+        {
+          movementState = LEFT_TURN; 
+        }
+        else if(average_js.x > movementThreshold)
+        {
+          movementState = RIGHT_TURN;
+        }
         else
         {
-           movementState = STILL;
-           
+           movementState = STILL; 
         }
         
+        int pwm_horizontal = joystickToPwm(average_js.x);
+        int pwm_vert = joystickToPwm(average_js.y);
         switch(movementState)
         {
          case STILL:
@@ -252,8 +297,32 @@ void loop()
          break;
          case FORWARD:
          {
+           rightMotor.setDirection(RIGHT);
+           leftMotor.setDirection(RIGHT);
+           rightMotor.setPwm(pwm_vert);
+           leftMotor.setPwm(pwm_vert);
+         }
+         break;
+         case BACKWARD:
+         {
            rightMotor.setDirection(LEFT);
-           leftMotor.setDirection(LEFT);
+           leftMotor.setDirection(LEFT); 
+           rightMotor.setPwm(pwm_vert);
+           leftMotor.setPwm(pwm_vert);
+         }
+         break;
+         case LEFT_TURN:
+         {
+           rightMotor.setDirection(RIGHT);
+           rightMotor.setPwm(pwm_horizontal);
+           leftMotor.setDirection(NONE); 
+         }
+         break;
+         case RIGHT_TURN:
+         {
+           rightMotor.setDirection(NONE);
+           leftMotor.setDirection(RIGHT);
+           leftMotor.setPwm(pwm_horizontal);
          }
          break;
         }

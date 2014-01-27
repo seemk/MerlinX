@@ -9,7 +9,8 @@ enum Button {
   CAM_LEFT,
   CAM_RIGHT,
   LIGHT,
-  JOYSTICK
+  JOYSTICK,
+  POT
 };
 
 enum Action {
@@ -30,6 +31,7 @@ struct Command
   Button button;
   Action action;
   Joystick joystick;
+  byte hoverAdc;
 };
 
 enum Direction
@@ -120,7 +122,6 @@ struct Motor
   {
     if(enabled)
     {
-      Serial.println("enabled");
       analogWrite(pwm_pin, pwm_value); 
     }
   }

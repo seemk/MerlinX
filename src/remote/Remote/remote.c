@@ -10,7 +10,7 @@
 #include "console.h"
 #include "usart.h"
 
-uint8_t button_states[8] = { 0, 0, 0, 0, 0, 0, 0, 0 };
+uint8_t button_states[11];
 joystick_t joystick_reading = { 0, 0 };
 
 void send_cmd(cmd_t cmd)
@@ -20,6 +20,7 @@ void send_cmd(cmd_t cmd)
 	usart_send(cmd.action);
 	usart_send(cmd.joystick_reading.x);
 	usart_send(cmd.joystick_reading.y);
+	usart_send(cmd.hover_adc_reading);
 	usart_send(cmd_end);
 }
 
@@ -64,7 +65,7 @@ void usart_byte_received(uint8_t incoming)
 void adc_init(void)
 {
 	// ADC frequency = F_CPU / 128
-	ADCSRA |= (1 << ADPS2) | (1 << ADPS1);
+	ADCSRA |= (1 << ADPS2) | (1 << ADPS1) | (1 << ADPS0);
 	// Enable ADC interrupts
 	ADCSRA |= (1 << ADIE);
 	// Enable free running
@@ -84,7 +85,7 @@ void adc_init(void)
 
 void buttons_init()
 {
-
+	memset(button_states, 0, sizeof(button_states));
 	set_input(DDRC, BTN_CAM_DOWN);
 	output_high(PORTC, BTN_CAM_DOWN);
 	
@@ -103,11 +104,11 @@ void buttons_init()
 	set_input(DDRD, BTN_LIGHT);
 	output_high(PORTD, BTN_LIGHT);
 	
-	set_input(DDRD, BTN_UU1);
-	output_high(PORTD, BTN_UU1);
+	set_input(DDRD, BTN_HOVER_DECREASE);
+	output_high(PORTD, BTN_HOVER_DECREASE);
 	
-	set_input(DDRE, BTN_UU2);
-	output_high(PORTE, BTN_UU2);
+	set_input(DDRE, BTN_HOVER_INCREASE);
+	output_high(PORTE, BTN_HOVER_INCREASE);
 	
 	set_input(DDRB, BTN_UU3);
 	output_high(PORTB, BTN_UU3);
@@ -124,6 +125,8 @@ void update_buttons(uint8_t* btn_array)
 	btn_array[CAM_LEFT]   = BTN_PRESSED(PINB, BTN_CAM_LEFT);
 	btn_array[CAM_RIGHT]  = BTN_PRESSED(PINB, BTN_CAM_RIGHT);
 	btn_array[LIGHT]	  = BTN_PRESSED(PIND, BTN_LIGHT);
+	btn_array[HOVER_DECREASE] = BTN_PRESSED(PIND, BTN_HOVER_DECREASE);
+	btn_array[HOVER_INCREASE] = BTN_PRESSED(PINE, BTN_HOVER_INCREASE);
 }
 
 void print_btn_states(uint8_t* btn_array)
@@ -134,6 +137,8 @@ void print_btn_states(uint8_t* btn_array)
 	console_write_fmt("Left: %d\r\n", btn_array[CAM_LEFT]);
 	console_write_fmt("Right: %d\r\n", btn_array[CAM_RIGHT]);
 	console_write_fmt("Light: %d\r\n", btn_array[LIGHT]);
+	console_write_fmt("Hover dec: %d\r\n", btn_array[HOVER_DECREASE]);
+	console_write_fmt("Hover inc: %d\r\n", btn_array[HOVER_INCREASE]);
 }
 
 // Returns NO_BUTTON if the states are equal
@@ -146,6 +151,8 @@ button_t compare_states(uint8_t* a, uint8_t* b)
 	if(a[CAM_LEFT] != b[CAM_LEFT])	   return CAM_LEFT;
 	if(a[CAM_RIGHT] != b[CAM_RIGHT])   return CAM_RIGHT;
 	if(a[LIGHT] != b[LIGHT])		   return LIGHT;
+	if(a[HOVER_DECREASE] != b[HOVER_DECREASE]) return HOVER_DECREASE;
+	if(a[HOVER_INCREASE] != b[HOVER_INCREASE]) return HOVER_INCREASE;
 	
 	return NO_BUTTON;
 }
@@ -182,14 +189,14 @@ int main(void)
 		
 		uint8_t avg = average(js_ref_avg_window, sizeof(js_ref_avg_window));
 		joystick_reading = map_js_reading(js_adc_x, js_adc_y, avg);
-		uint8_t new_btn_states[8];
+		uint8_t new_btn_states[11];
 		update_buttons(new_btn_states);
 		button_t changed_btn = compare_states(button_states, new_btn_states);
 		if(changed_btn != NO_BUTTON)
 		{
-			console_write_fmt("POT1: %d\r\n", hover_adc);
+			print_btn_states(button_states);
 			action_t action = new_btn_states[changed_btn] ? PRESSED : RELEASED;
-			cmd_t cmd = { changed_btn, action, joystick_reading };
+			cmd_t cmd = { changed_btn, action, joystick_reading, 0 };
 			send_cmd(cmd);
 		}
 		memcpy(button_states, new_btn_states, sizeof(button_states));
@@ -224,26 +231,14 @@ ISR(ADC_vect)
 			js_ref_avg_window_pos %= sizeof(js_ref_avg_window);
 			// Switch to JS_2
 			ADMUX = 0x67;
-			break;
+		break;
 		case 0x67:
 			js_adc_y = ADCH;
-			// Switch to ADC0
-			ADMUX = 0x60;
-			break;
-		case 0x60:
-		// ADC giving garbage values, wtf? Happens on all three ADC channels
-		// Temporary fix
-			if(ADCH < 132 || ADCH > 139)
-			{
-				hover_adc = ADCH;
-			}
-			
-			
-			// Switch to JS_1
+			// Switch to JS1
 			ADMUX = 0x65;
 			break;
-		default:
-			break;
+			default:
+		break;
 	}
 	
 	// Start the conversion again
@@ -276,6 +271,9 @@ joystick_t map_js_reading(uint8_t adc_js_x, uint8_t adc_js_y, uint8_t adc_js_ref
 
 ISR(TIMER1_COMPA_vect)
 {
-	cmd_t cmd = { JS, MOVED, joystick_reading };
-	send_cmd(cmd);
+	cmd_t js_cmd = { JS, MOVED, joystick_reading, 0 };
+	send_cmd(js_cmd);
+	//cmd_t adc_cmd = { POT, MOVED, joystick_reading, hover_adc };
+	//send_cmd(adc_cmd);
 }
+

@@ -14,7 +14,10 @@ typedef enum {
 	CAM_LEFT,
 	CAM_RIGHT,
 	LIGHT,
-	JS
+	JS,
+	POT,
+	HOVER_DECREASE,
+	HOVER_INCREASE
 } button_t;
 
 typedef enum {
@@ -28,7 +31,10 @@ typedef struct {
 	button_t button;
 	action_t action;
 	joystick_t joystick_reading;
+	uint8_t hover_adc_reading;
 } cmd_t;
+
+
 
 // Maps the ADC readings to about -100 .. 100
 joystick_t map_js_reading(uint8_t adc_js_x, uint8_t adc_js_y, uint8_t adc_js_ref);

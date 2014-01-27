@@ -13,8 +13,8 @@
 #define BTN_CAM_RIGHT PB4
 #define BTN_LIGHT PD7
 // Unused pins, currently placeholders for extra buttons. Should still be set as inputs
-#define BTN_UU1 PD6
-#define BTN_UU2 PE6
+#define BTN_HOVER_DECREASE PD6
+#define BTN_HOVER_INCREASE PE6
 #define BTN_UU3 PB0
 #define BTN_UU4 PB7
 
