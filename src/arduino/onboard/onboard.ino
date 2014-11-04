@@ -1,10 +1,13 @@
 #include <Servo.h>
 #include "types.h"
 
+#define DEBUG_LOGS 0
+
 ShipMovementState movementState = STILL;
 
 Motor leftMotor;
 Motor rightMotor;
+Motor hoverMotor;
 
 Servo servoH;
 Servo servoV;
@@ -19,6 +22,9 @@ const int servoOverflowMax = 75;
 const int pwmLevelMin = 60;
 const int pwmLevelMax = 250;
 const int movementThreshold = 20;
+const int minHoverPwm = 50;
+const int maxHoverPwm = 230;
+const int hoverPwmStep = 20;
 
 int hServoCenter = 68;
 int hServoRight = 35;
@@ -32,10 +38,7 @@ int vServoUp = 43;
 int vServoCount = 0;
 Direction vServoDirection = NONE;
 
-int hoverADC = 0;
-
-const char cmd_begin = 0x7e;
-const char cmd_end = 0x7f;
+byte hoverADC = 0;
 
 void moveVerticalServo(Direction dir)
 {
@@ -88,17 +91,18 @@ void setupDCMotors()
 { 
   // PWM, right dir, left dir, left sense, right sense
   leftMotor = Motor(8, 9, 51, 53, 10);
-  leftMotor.setPwm(100);
   
   rightMotor = Motor(11, 12, 50, 52, 13);
-  rightMotor.setPwm(100);
+  
+  hoverMotor = Motor(7, 6, 48, 46, 5);
+  hoverMotor.setPwm(150);
 }
 
 void setup()
 {
   memset(averages, 0, sizeof(averages));
   // Serial = terminal
-  Serial.begin(9600);
+  Serial2.begin(9600);
   // Serial1 = from RS422 module
   Serial1.begin(9600);
   
@@ -119,7 +123,7 @@ int parseCmd(char* buf, Command& cmd)
   cmd.action = (Action)buf[2];
   cmd.joystick.x = (int)buf[3];
   cmd.joystick.y = (int)buf[4];
-  cmd.hoverAdc = (int)buf[5];
+  cmd.hoverAdc = (byte)buf[5];
   
   return 1;  
 }
@@ -137,8 +141,8 @@ void handleCmd(const Command& cmd)
   if(btn == POT)
   {
     hoverADC = cmd.hoverAdc;
-    Serial.print("Received hover ADC. ");
-    Serial.println(hoverADC, DEC);
+    Serial2.print("Received hover ADC. ");
+    Serial2.println(hoverADC, DEC);
     return;
   }
   switch(action)
@@ -149,6 +153,36 @@ void handleCmd(const Command& cmd)
      if(btn == CAM_UP) vServoDirection = UP;
      if(btn == CAM_LEFT) hServoDirection = LEFT;
      if(btn == CAM_RIGHT) hServoDirection = RIGHT;
+     if(btn == HOVER_DECREASE)
+     {
+       if(hoverMotor.enabled)
+       {
+         int nextPwm = hoverMotor.getPwm() - hoverPwmStep;
+         if(nextPwm >= minHoverPwm)
+         {
+            hoverMotor.setPwm(nextPwm);
+         }
+         else
+         {
+           hoverMotor.setDirection(NONE);
+         }
+       }
+
+       
+     }
+     if(btn == HOVER_INCREASE)
+     {
+       if(hoverMotor.enabled)
+       {
+         int nextPwm = hoverMotor.getPwm() + hoverPwmStep;
+         if(nextPwm <= maxHoverPwm) hoverMotor.setPwm(nextPwm);
+       }
+       else
+       {
+          hoverMotor.setDirection(LEFT);
+       }
+       
+     }
    }
    break;
    case RELEASED:
@@ -190,30 +224,30 @@ int isCommandValid(const Command& cmd)
 {
  Action action = cmd.action;
  Button btn = cmd.button;
- return btn <= 8 && action <= 3; 
+ return btn <= 10 && action <= 3; 
 }
 
 void printJoystick(Joystick js)
 {
-    Serial.print(" JS: (");
-    Serial.print(js.x, DEC);
-    Serial.print(", ");
-    Serial.print(js.y, DEC);
-    Serial.print(")");
+    Serial2.print(" JS: (");
+    Serial2.print(js.x, DEC);
+    Serial2.print(", ");
+    Serial2.print(js.y, DEC);
+    Serial2.print(")");
 }
 
 void printCmd(const Command& cmd)
 {
-  Serial.print("Command { Button: ");
-  Serial.print(cmd.button, DEC);
-  Serial.print(" Action: ");
-  Serial.print(cmd.action, DEC);
+  Serial2.print("Command { Button: ");
+  Serial2.print(cmd.button, DEC);
+  Serial2.print(" Action: ");
+  Serial2.print(cmd.action, DEC);
   if(cmd.button == JOYSTICK)
   {
     printJoystick(cmd.joystick);
   }
 
-  Serial.println(" }");
+  Serial2.println(" }");
 }
 
 // Maps Joystick reading [-100, 100] to [60, 250]
@@ -258,11 +292,11 @@ void loop()
     {
       if(isCommandValid(cmd))
       {
-        //printCmd(cmd);
+        #if DEBUG_LOGS
+        printCmd(cmd);
+        #endif
         handleCmd(cmd);
-        //printJoystick(average_js);
-        //Serial.println("");
-        
+
         if(average_js.y > movementThreshold)
         {
             movementState = FORWARD;
@@ -274,7 +308,7 @@ void loop()
         }
         else if(average_js.x < -movementThreshold)
         {
-          movementState = LEFT_TURN; 
+          movementState = LEFT_TURN;
         }
         else if(average_js.x > movementThreshold)
         {
@@ -282,7 +316,7 @@ void loop()
         }
         else
         {
-           movementState = STILL; 
+           movementState = STILL;
         }
         
         int pwm_horizontal = joystickToPwm(average_js.x);
@@ -332,10 +366,11 @@ void loop()
     }
     else
     {
-       Serial.println("Parse error"); 
+       Serial2.println("Parse error"); 
     }
   }
  
   leftMotor.update();
   rightMotor.update();
+  hoverMotor.update();
 }

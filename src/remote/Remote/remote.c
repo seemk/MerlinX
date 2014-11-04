@@ -58,8 +58,7 @@ uint8_t average(uint8_t* window, uint8_t size)
 
 void usart_byte_received(uint8_t incoming)
 {
-	console_write_fmt("Received: %c", incoming);
-	usart_send(incoming);
+
 }
 
 void adc_init(void)

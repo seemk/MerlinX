@@ -1,5 +1,7 @@
 #include "Arduino.h"
 
+const char cmd_begin = 0x7e;
+const char cmd_end = 0x7f;
 
 enum Button {
   NO_BUTTON,
@@ -10,11 +12,13 @@ enum Button {
   CAM_RIGHT,
   LIGHT,
   JOYSTICK,
-  POT
+  POT,
+  HOVER_DECREASE,
+  HOVER_INCREASE
 };
 
 enum Action {
-        NO_ACTION,
+  NO_ACTION,
 	PRESSED,
 	RELEASED,
 	MOVED	
@@ -54,7 +58,7 @@ enum ShipMovementState
 
 struct Motor
 {
-  Motor() : direction(NONE), enabled(false) { } 
+  Motor() : direction(NONE), enabled(false), stopping(false) { } 
   Motor(int pin_pwm, int pin_dir_right, int pin_dir_left, int pin_sense_left, int pin_sense_right)
     : pwm_pin(pin_pwm)
     , right_dir_pin(pin_dir_right)
@@ -64,6 +68,7 @@ struct Motor
     , pwm_value(100)
     , direction(NONE)
     , enabled(false)
+    , stopping(false)
     {  
       pinMode(pwm_pin, OUTPUT); 
       pinMode(right_dir_pin, OUTPUT);
@@ -80,6 +85,7 @@ struct Motor
 
   Direction direction;
   bool enabled;
+  bool stopping;
   int pwm_pin;
   int right_dir_pin;
   int left_dir_pin;
@@ -117,6 +123,10 @@ struct Motor
     }
   }
   void setPwm(int pwm) { pwm_value = pwm; }
+  int getPwm() const
+  {
+   return pwm_value; 
+  }
   
   void update()
   {
@@ -124,5 +134,10 @@ struct Motor
     {
       analogWrite(pwm_pin, pwm_value); 
     }
+  }
+  
+  void stopMotor()
+  {
+    stopping = true;
   }
 };
