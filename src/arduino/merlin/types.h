@@ -14,7 +14,9 @@ enum Button {
   JOYSTICK,
   POT,
   HOVER_DECREASE,
-  HOVER_INCREASE
+  HOVER_INCREASE,
+
+  BUTTON_COUNT
 };
 
 enum Action {
